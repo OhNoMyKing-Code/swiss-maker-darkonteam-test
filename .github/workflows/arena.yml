@@ -1,0 +1,27 @@
+name: Hourly Ultrabullet
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"  # mỗi giờ 1 lần
+
+jobs:
+  arena:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Run Arena Maker
+        env:
+          OAUTH_TOKEN: ${{ secrets.OAUTH_TOKEN }}
+        run: npx ts-node src/index.ts

@@ -3,7 +3,7 @@ name: Hourly Ultrabullet
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"  # mỗi giờ 1 lần
+    - cron: "0 * * * *" # mỗi giờ UTC
 
 jobs:
   arena:
@@ -19,7 +19,7 @@ jobs:
           node-version: 18
 
       - name: Install dependencies
-        run: yarn install
+        run: npm install
 
       - name: Run Arena Maker
         env:

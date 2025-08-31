@@ -1,76 +1,77 @@
 import fetch from "node-fetch";
+import { config } from "./config";
 
-const TEAM_ID = "AggressiveBot"; // Thay bằng Team ID thật của mày
-const OAUTH_TOKEN = process.env.OAUTH_TOKEN;
-
-if (!OAUTH_TOKEN) {
-  throw new Error("OAUTH_TOKEN chưa được set. Vào GitHub Secrets tạo OAUTH_TOKEN.");
+function assertEnv() {
+  console.log("Debug: Token length:", config.oauthToken.length);
+  console.log("Debug: Team ID:", config.team);
+  if (!config.oauthToken) throw new Error("OAUTH_TOKEN missing!");
 }
-
-const ARENA_INTERVAL_HOURS = 1;
-const DAYS_IN_ADVANCE = 1;
 
 function nextEvenUtcHour(from: Date): Date {
   const d = new Date(from);
   const h = d.getUTCHours();
-  const nextEven = Math.floor(h / 2) * 2 + 2;
+  const nextEven = Math.floor(h / config.arena.intervalHours) * config.arena.intervalHours + config.arena.intervalHours;
   d.setUTCHours(nextEven, 0, 0, 0);
   return d;
 }
 
-async function createArena(startDate: Date, prevLink?: string) {
-  const body = new URLSearchParams({
-    name: "Hourly Ultrabullet",
-    description: `Next: ${prevLink ?? "tba"}`,
-    clockTime: "0.25",
-    clockIncrement: "0",
-    minutes: "60",
-    rated: "true",
-    variant: "standard",
-    teamId: TEAM_ID,
-    teamTournament: "true",
-    startDate: startDate.toISOString(),
-  });
+async function createArena(startDate: Date, nextLink: string) {
+  const body = {
+    name: config.arena.name(),
+    description: config.arena.description(nextLink),
+    clockTime: config.arena.clockTime,
+    clockIncrement: config.arena.clockIncrement,
+    minutes: config.arena.minutes,
+    rated: config.arena.rated,
+    variant: config.arena.variant,
+    teamId: config.team,
+    teamTournament: true,
+    startDate: startDate.toISOString()
+  };
 
-  console.log("Creating arena with body:", Object.fromEntries(body));
+  console.log("Creating arena with body:", body);
 
-  const res = await fetch("https://lichess.org/api/tournament", {
+  if (config.dryRun) return "dry-run";
+
+  const res = await fetch(`${config.server}/api/tournament`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${OAUTH_TOKEN}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Bearer ${config.oauthToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
     },
-    body,
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    console.error("Arena creation failed:", res.status, err);
+    const errText = await res.text();
+    console.error("Arena creation failed:", res.status, errText);
     return null;
   }
 
   const data = await res.json();
-  const url = data.id ? `https://lichess.org/tournament/${data.id}` : null;
+  const url = data.id ? `${config.server}/tournament/${data.id}` : null;
   console.log("Arena created:", url);
   return url;
 }
 
 async function main() {
+  assertEnv();
+
   const now = new Date();
   const firstStart = nextEvenUtcHour(now);
 
-  const arenasPerDay = Math.floor(24 / ARENA_INTERVAL_HOURS);
-  const totalArenas = arenasPerDay * DAYS_IN_ADVANCE;
+  const arenasPerDay = Math.floor(24 / config.arena.intervalHours);
+  const totalArenas = arenasPerDay * config.daysInAdvance;
+  console.log(`Creating ${totalArenas} arenas for team ${config.team}`);
 
-  console.log(`Creating ${totalArenas} arenas for team ${TEAM_ID}`);
-
-  let prevUrl: string | undefined;
+  let prevUrl: string | null = null;
 
   for (let i = 0; i < totalArenas; i++) {
-    if (i > 0) await new Promise(res => setTimeout(res, 5000)); // tránh rate limit
+    if (i > 0) await new Promise(r => setTimeout(r, 60000)); // 1 phút delay tránh rate limit
 
-    const startDate = new Date(firstStart.getTime() + i * ARENA_INTERVAL_HOURS * 60 * 60 * 1000);
-    const arenaUrl = await createArena(startDate, prevUrl);
+    const startDate = new Date(firstStart.getTime() + i * config.arena.intervalHours * 60 * 60 * 1000);
+    const arenaUrl = await createArena(startDate, prevUrl ?? "tba");
     if (arenaUrl) prevUrl = arenaUrl;
   }
 }
